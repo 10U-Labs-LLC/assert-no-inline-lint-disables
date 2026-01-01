@@ -1,0 +1,34 @@
+[build-system]
+build-backend = "setuptools.build_meta"
+requires = ["setuptools>=61.0"]
+
+[project]
+authors = [{name = "10U Labs", email = "dev@10ulabs.com"}]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
+]
+description = "CLI tool to assert that files contain no inline lint-disable directives"
+license = "Apache-2.0"
+name = "assert-no-inline-lint-disables"
+readme = "README.md"
+requires-python = ">=3.10"
+version = "1.0.0"
+
+[project.scripts]
+assert-no-inline-lint-disables = "assert_no_inline_lint_disables.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/10U-Labs-LLC/assert-no-inline-lint-disables"
+Issues = "https://github.com/10U-Labs-LLC/assert-no-inline-lint-disables/issues"
+Repository = "https://github.com/10U-Labs-LLC/assert-no-inline-lint-disables"
+
+[tool.pylint."messages control"]
+disable = ["too-few-public-methods", "wrong-import-order"]
