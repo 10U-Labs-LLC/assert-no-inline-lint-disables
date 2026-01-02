@@ -4,18 +4,30 @@ import re
 from dataclasses import dataclass
 
 
+VALID_LINTERS = frozenset({"yamllint", "pylint", "mypy"})
+
+
 @dataclass(frozen=True)
 class Finding:
     """Represents a single finding of an inline lint-disable directive."""
 
     path: str
     line_number: int
-    tool: str
+    linter: str
     directive: str
 
     def __str__(self) -> str:
-        """Format finding as path:line:tool:directive."""
-        return f"{self.path}:{self.line_number}:{self.tool}:{self.directive}"
+        """Format finding as path:line:linter:directive."""
+        return f"{self.path}:{self.line_number}:{self.linter}:{self.directive}"
+
+    def to_dict(self) -> dict[str, str | int]:
+        """Convert finding to dictionary for JSON output."""
+        return {
+            "path": self.path,
+            "line": self.line_number,
+            "linter": self.linter,
+            "directive": self.directive,
+        }
 
 
 # Patterns for detecting inline lint-disable directives (suppressions only).
@@ -40,48 +52,100 @@ MYPY_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"mypy:\s*ignore-errors", re.IGNORECASE), "mypy: ignore-errors"),
 ]
 
-ALL_PATTERNS: list[tuple[str, list[tuple[re.Pattern[str], str]]]] = [
-    ("yamllint", YAMLLINT_PATTERNS),
-    ("pylint", PYLINT_PATTERNS),
-    ("mypy", MYPY_PATTERNS),
-]
+LINTER_PATTERNS: dict[str, list[tuple[re.Pattern[str], str]]] = {
+    "yamllint": YAMLLINT_PATTERNS,
+    "pylint": PYLINT_PATTERNS,
+    "mypy": MYPY_PATTERNS,
+}
 
 
-def scan_line(line: str) -> list[tuple[str, str]]:
+def scan_line(
+    line: str,
+    linters: frozenset[str] | None = None,
+) -> list[tuple[str, str]]:
     """Scan a single line for inline lint-disable directives.
 
     Args:
         line: The line of text to scan.
+        linters: Set of linters to check. If None, checks all linters.
 
     Returns:
-        A list of (tool, directive) tuples for each finding.
+        A list of (linter, directive) tuples for each finding.
     """
+    if linters is None:
+        linters = VALID_LINTERS
+
     findings: list[tuple[str, str]] = []
-    for tool, patterns in ALL_PATTERNS:
+    for linter in linters:
+        patterns = LINTER_PATTERNS.get(linter, [])
         for pattern, directive in patterns:
             if pattern.search(line):
-                findings.append((tool, directive))
-                break  # Only report one finding per tool per line
+                findings.append((linter, directive))
+                break  # Only report one finding per linter per line
     return findings
 
 
-def scan_file(path: str, content: str) -> list[Finding]:
+def scan_file(
+    path: str,
+    content: str,
+    linters: frozenset[str] | None = None,
+    allow_patterns: list[str] | None = None,
+) -> list[Finding]:
     """Scan file content for inline lint-disable directives.
 
     Args:
         path: The file path (used for reporting).
         content: The file content to scan.
+        linters: Set of linters to check. If None, checks all linters.
+        allow_patterns: List of patterns to allow (skip matching directives).
 
     Returns:
         A list of Finding objects for each directive found.
     """
+    if allow_patterns is None:
+        allow_patterns = []
+
     findings: list[Finding] = []
     for line_number, line in enumerate(content.splitlines(), start=1):
-        for tool, directive in scan_line(line):
-            findings.append(Finding(
-                path=path,
-                line_number=line_number,
-                tool=tool,
-                directive=directive,
-            ))
+        for linter, directive in scan_line(line, linters):
+            # Check if this directive matches any allow pattern
+            is_allowed = any(
+                allow_pat.lower() in line.lower()
+                for allow_pat in allow_patterns
+            )
+            if not is_allowed:
+                findings.append(Finding(
+                    path=path,
+                    line_number=line_number,
+                    linter=linter,
+                    directive=directive,
+                ))
     return findings
+
+
+def parse_linters(linters_str: str) -> frozenset[str]:
+    """Parse comma-separated linters string and validate.
+
+    Args:
+        linters_str: Comma-separated list of linter names.
+
+    Returns:
+        Frozenset of valid linter names.
+
+    Raises:
+        ValueError: If any linter name is invalid.
+    """
+    linters = frozenset(l.strip() for l in linters_str.split(",") if l.strip())
+
+    invalid = linters - VALID_LINTERS
+    if invalid:
+        valid_list = ", ".join(sorted(VALID_LINTERS))
+        invalid_list = ", ".join(sorted(invalid))
+        raise ValueError(
+            f"Invalid linter(s): {invalid_list}. Valid options: {valid_list}"
+        )
+
+    if not linters:
+        raise ValueError("At least one linter must be specified")
+
+    return linters

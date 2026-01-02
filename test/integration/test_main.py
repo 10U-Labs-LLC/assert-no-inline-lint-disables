@@ -16,7 +16,7 @@ class TestMainModule:
         test_file = tmp_path / "test.py"
         test_file.write_text("x = 1\n")
 
-        with patch("sys.argv", ["prog", str(test_file)]):
+        with patch("sys.argv", ["prog", "--linters", "pylint", str(test_file)]):
             with pytest.raises(SystemExit) as exc_info:
                 importlib.import_module("assert_no_inline_lint_disables.__main__")
 

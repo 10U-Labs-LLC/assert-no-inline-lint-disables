@@ -2,7 +2,12 @@
 
 import pytest
 
-from assert_no_inline_lint_disables.scanner import Finding, scan_file, scan_line
+from assert_no_inline_lint_disables.scanner import (
+    Finding,
+    parse_linters,
+    scan_file,
+    scan_line,
+)
 
 
 @pytest.mark.unit
@@ -144,14 +149,14 @@ class TestScanLineMultiple:
     """Tests for multiple directives."""
 
     def test_multiple_directives_same_line(self) -> None:
-        """Detects multiple different tool directives on same line."""
+        """Detects multiple different linter directives on same line."""
         result = scan_line("# pylint: disable=foo  # type: ignore")
         assert len(result) == 2
         assert ("pylint", "pylint: disable") in result
         assert ("mypy", "type: ignore") in result
 
-    def test_multiple_same_tool_directives(self) -> None:
-        """Only reports one finding per tool per line."""
+    def test_multiple_same_linter_directives(self) -> None:
+        """Only reports one finding per linter per line."""
         result = scan_line("# pylint: disable=foo pylint: disable-next=bar")
         assert result == [("pylint", "pylint: disable-next")]
 
@@ -159,6 +164,38 @@ class TestScanLineMultiple:
         """Detects directive in middle of line."""
         result = scan_line("code here  # pylint: disable=foo  # more")
         assert result == [("pylint", "pylint: disable")]
+
+
+@pytest.mark.unit
+class TestScanLineLinterFiltering:
+    """Tests for linter filtering in scan_line."""
+
+    def test_filter_single_linter(self) -> None:
+        """Only detects specified linter."""
+        line = "# pylint: disable=foo  # type: ignore"
+        result = scan_line(line, frozenset({"pylint"}))
+        assert result == [("pylint", "pylint: disable")]
+
+    def test_filter_multiple_linters(self) -> None:
+        """Detects multiple specified linters."""
+        line = "# pylint: disable=foo  # type: ignore  # yamllint disable"
+        result = scan_line(line, frozenset({"pylint", "mypy"}))
+        assert len(result) == 2
+        assert ("pylint", "pylint: disable") in result
+        assert ("mypy", "type: ignore") in result
+        assert ("yamllint", "yamllint disable") not in result
+
+    def test_filter_no_match(self) -> None:
+        """Returns empty when filtered linter not present."""
+        line = "# pylint: disable=foo"
+        result = scan_line(line, frozenset({"mypy"}))
+        assert not result
+
+    def test_none_linters_checks_all(self) -> None:
+        """None linters parameter checks all linters."""
+        line = "# pylint: disable=foo  # type: ignore"
+        result = scan_line(line, None)
+        assert len(result) == 2
 
 
 @pytest.mark.unit
@@ -182,7 +219,7 @@ class TestScanFile:
         assert findings[0] == Finding(
             path="test.py",
             line_number=1,
-            tool="mypy",
+            linter="mypy",
             directive="type: ignore",
         )
 
@@ -196,9 +233,9 @@ class TestScanFile:
         findings = scan_file("test.py", content)
         assert len(findings) == 2
         assert findings[0].line_number == 1
-        assert findings[0].tool == "pylint"
+        assert findings[0].linter == "pylint"
         assert findings[1].line_number == 3
-        assert findings[1].tool == "mypy"
+        assert findings[1].linter == "mypy"
 
     def test_multiple_findings_same_line(self) -> None:
         """File with multiple directives on same line returns all."""
@@ -211,10 +248,85 @@ class TestScanFile:
         finding = Finding(
             path="src/foo.py",
             line_number=42,
-            tool="pylint",
+            linter="pylint",
             directive="pylint: disable",
         )
         assert str(finding) == "src/foo.py:42:pylint:pylint: disable"
+
+    def test_finding_to_dict(self) -> None:
+        """Finding to_dict returns correct dictionary."""
+        finding = Finding(
+            path="src/foo.py",
+            line_number=42,
+            linter="pylint",
+            directive="pylint: disable",
+        )
+        assert finding.to_dict() == {
+            "path": "src/foo.py",
+            "line": 42,
+            "linter": "pylint",
+            "directive": "pylint: disable",
+        }
+
+
+@pytest.mark.unit
+class TestScanFileLinterFiltering:
+    """Tests for linter filtering in scan_file."""
+
+    def test_filter_single_linter(self) -> None:
+        """Only detects specified linter in file."""
+        content = "# pylint: disable=foo\nx = 1  # type: ignore\n"
+        findings = scan_file("test.py", content, frozenset({"mypy"}))
+        assert len(findings) == 1
+        assert findings[0].linter == "mypy"
+
+    def test_filter_excludes_other_linters(self) -> None:
+        """Excludes unspecified linters."""
+        content = "# pylint: disable=foo\n# yamllint disable\n"
+        findings = scan_file("test.py", content, frozenset({"mypy"}))
+        assert not findings
+
+
+@pytest.mark.unit
+class TestScanFileAllowPatterns:
+    """Tests for allow patterns in scan_file."""
+
+    def test_allow_specific_directive(self) -> None:
+        """Allowed directive is not reported."""
+        content = "x = foo()  # type: ignore[import]\n"
+        findings = scan_file("test.py", content, allow_patterns=["type: ignore[import]"])
+        assert not findings
+
+    def test_allow_does_not_affect_others(self) -> None:
+        """Allow pattern only affects matching directives."""
+        content = (
+            "x = foo()  # type: ignore[import]\n"
+            "y = bar()  # type: ignore\n"
+        )
+        findings = scan_file("test.py", content, allow_patterns=["type: ignore[import]"])
+        assert len(findings) == 1
+        assert findings[0].line_number == 2
+
+    def test_allow_case_insensitive(self) -> None:
+        """Allow pattern matching is case-insensitive."""
+        content = "x = foo()  # TYPE: IGNORE[IMPORT]\n"
+        findings = scan_file("test.py", content, allow_patterns=["type: ignore[import]"])
+        assert not findings
+
+    def test_multiple_allow_patterns(self) -> None:
+        """Multiple allow patterns work together."""
+        content = (
+            "# pylint: disable=too-many-arguments\n"
+            "x = foo()  # type: ignore[import]\n"
+            "y = bar()  # type: ignore\n"
+        )
+        findings = scan_file(
+            "test.py",
+            content,
+            allow_patterns=["type: ignore[import]", "too-many-arguments"],
+        )
+        assert len(findings) == 1
+        assert findings[0].line_number == 3
 
 
 @pytest.mark.unit
@@ -230,3 +342,48 @@ class TestEnableDirectivesNotDetected:
         """Pylint enable is not detected."""
         content = "# pylint: enable=foo\n# pylint: enable-next=bar\n"
         assert not scan_file("test.py", content)
+
+
+@pytest.mark.unit
+class TestParseLinters:
+    """Tests for parse_linters function."""
+
+    def test_single_linter(self) -> None:
+        """Parses single linter."""
+        result = parse_linters("pylint")
+        assert result == frozenset({"pylint"})
+
+    def test_multiple_linters(self) -> None:
+        """Parses multiple comma-separated linters."""
+        result = parse_linters("pylint,mypy")
+        assert result == frozenset({"pylint", "mypy"})
+
+    def test_all_linters(self) -> None:
+        """Parses all three linters."""
+        result = parse_linters("yamllint,pylint,mypy")
+        assert result == frozenset({"yamllint", "pylint", "mypy"})
+
+    def test_whitespace_tolerance(self) -> None:
+        """Tolerates whitespace around linter names."""
+        result = parse_linters("pylint , mypy")
+        assert result == frozenset({"pylint", "mypy"})
+
+    def test_invalid_linter_raises(self) -> None:
+        """Raises ValueError for invalid linter name."""
+        with pytest.raises(ValueError, match="Invalid linter"):
+            parse_linters("eslint")
+
+    def test_mixed_valid_invalid_raises(self) -> None:
+        """Raises ValueError when any linter is invalid."""
+        with pytest.raises(ValueError, match="Invalid linter"):
+            parse_linters("pylint,eslint")
+
+    def test_empty_string_raises(self) -> None:
+        """Raises ValueError for empty string."""
+        with pytest.raises(ValueError, match="At least one linter"):
+            parse_linters("")
+
+    def test_only_commas_raises(self) -> None:
+        """Raises ValueError for string with only commas."""
+        with pytest.raises(ValueError, match="At least one linter"):
+            parse_linters(",,,")
