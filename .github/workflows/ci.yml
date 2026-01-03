@@ -79,7 +79,7 @@ jobs:
         id: e2e_tests
         name: E2E tests
         run: python3 -m pytest test/e2e/ --verbose --pythonwarnings=error
-      - name: Check results
+      - name: Assert no step failed
         run: |
           failed=""
           [ "${{ steps.yamllint.outcome }}" = "failure" ] && failed="$failed yamllint"
