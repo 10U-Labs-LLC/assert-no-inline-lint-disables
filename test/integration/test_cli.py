@@ -2,21 +2,10 @@
 
 from pathlib import Path
 from typing import Any
-from unittest.mock import patch
 
 import pytest
 
-from assert_no_inline_lint_disables.cli import main
-
-
-def run_main_with_args(args: list[str]) -> int:
-    """Run main() with the given arguments and return the exit code."""
-    with patch("sys.argv", ["assert-no-inline-lint-disables", *args]):
-        try:
-            main()
-            return 0
-        except SystemExit as e:
-            return int(e.code) if e.code is not None else 0
+from ..conftest import run_main_with_args
 
 
 @pytest.mark.integration
@@ -625,68 +614,52 @@ class TestCliDirectoryHandling:
 
 @pytest.mark.integration
 class TestCliGlobPatterns:
-    """Tests for glob pattern expansion."""
+    """Integration tests for glob pattern expansion.
 
-    def test_asterisk_glob_expands_and_finds_violations(
+    Unit tests cover all glob pattern types exhaustively with mocking.
+    These integration tests verify the full pipeline works with real files.
+    """
+
+    def test_glob_expands_and_scans_multiple_files(
         self, tmp_path: Path, capsys: Any
     ) -> None:
-        """Asterisk glob pattern expands to files and reports violations."""
-        file1 = tmp_path / "first.py"
-        file2 = tmp_path / "second.py"
-        file1.write_text("x = 1  # type: ignore\n")
-        file2.write_text("y = 2  # type: ignore\n")
-        pattern = str(tmp_path / "*.py")
-        exit_code = run_main_with_args(["--linters", "mypy", pattern])
+        """Glob pattern expands to multiple files and scans all of them."""
+        (tmp_path / "alpha.py").write_text("a = 1  # type: ignore\n")
+        (tmp_path / "beta.py").write_text("b = 2  # type: ignore\n")
+        (tmp_path / "gamma.py").write_text("clean code\n")
+        exit_code = run_main_with_args([
+            "--linters", "mypy", str(tmp_path / "*.py")
+        ])
         assert exit_code == 1
         output = capsys.readouterr().out
-        assert "first.py" in output
-        assert "second.py" in output
+        # Verify multiple files were scanned and findings reported
+        assert "alpha.py" in output
+        assert "beta.py" in output
+        assert "gamma.py" not in output  # No finding in clean file
 
-    def test_glob_matching_directory_scans_contents(
+    def test_recursive_glob_finds_deeply_nested_files(
         self, tmp_path: Path, capsys: Any
     ) -> None:
-        """Glob matching a directory name expands to scan files inside."""
-        subdir = tmp_path / "src"
-        subdir.mkdir()
-        nested = subdir / "module.py"
-        nested.write_text("# pylint: disable=invalid-name\n")
-        pattern = str(tmp_path / "s*")
-        exit_code = run_main_with_args(["--linters", "pylint", pattern])
+        """Recursive ** glob finds files in nested directories."""
+        nested = tmp_path / "src" / "pkg" / "subpkg"
+        nested.mkdir(parents=True)
+        (nested / "module.py").write_text("# pylint: disable=all\n")
+        (tmp_path / "root.py").write_text("# pylint: disable=all\n")
+        exit_code = run_main_with_args([
+            "--linters", "pylint", str(tmp_path / "**" / "*.py")
+        ])
         assert exit_code == 1
         output = capsys.readouterr().out
+        # Both root and deeply nested files found
+        assert "root.py" in output
         assert "module.py" in output
-        assert "pylint: disable" in output
 
-    def test_unmatched_glob_reports_error(self, tmp_path: Path, capsys: Any) -> None:
-        """Glob pattern with no matches reports error and exits 2."""
-        pattern = str(tmp_path / "missing_*.py")
-        exit_code = run_main_with_args(["--linters", "mypy", pattern])
+    def test_nonexistent_glob_pattern_reports_error(
+        self, tmp_path: Path, capsys: Any
+    ) -> None:
+        """Glob pattern matching nothing reports error with pattern name."""
+        exit_code = run_main_with_args([
+            "--linters", "mypy", str(tmp_path / "no_match_*.py")
+        ])
         assert exit_code == 2
-        stderr = capsys.readouterr().err
-        assert "missing_*.py" in stderr
-        assert "No such file" in stderr
-
-    def test_double_asterisk_recursive_glob(self, tmp_path: Path, capsys: Any) -> None:
-        """Double asterisk glob recursively matches nested directories."""
-        deep = tmp_path / "level1" / "level2" / "level3"
-        deep.mkdir(parents=True)
-        target = deep / "deep_file.py"
-        target.write_text("val = None  # type: ignore[assignment]\n")
-        pattern = str(tmp_path / "**" / "*.py")
-        exit_code = run_main_with_args(["--linters", "mypy", pattern])
-        assert exit_code == 1
-        output = capsys.readouterr().out
-        assert "deep_file.py" in output
-
-    def test_single_char_and_bracket_globs(self, tmp_path: Path) -> None:
-        """Question mark and bracket glob patterns work correctly."""
-        (tmp_path / "x.py").write_text("a = 1  # type: ignore\n")
-        (tmp_path / "y.py").write_text("b = 2  # type: ignore\n")
-        (tmp_path / "zz.py").write_text("c = 3  # type: ignore\n")
-        # ? matches single char, [xy] matches x or y
-        pattern_q = str(tmp_path / "?.py")
-        pattern_b = str(tmp_path / "[xy].py")
-        exit_code_q = run_main_with_args(["--linters", "mypy", pattern_q])
-        exit_code_b = run_main_with_args(["--linters", "mypy", pattern_b])
-        assert exit_code_q == 1
-        assert exit_code_b == 1
+        assert "no_match_*.py" in capsys.readouterr().err

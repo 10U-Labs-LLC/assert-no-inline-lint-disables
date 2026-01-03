@@ -4,7 +4,6 @@ These tests use mocking to isolate CLI logic from scanner implementation,
 following TDD principles where tests can be written before implementation.
 """
 
-import sys
 from collections.abc import Generator
 from contextlib import contextmanager
 from pathlib import Path
@@ -13,18 +12,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from assert_no_inline_lint_disables.cli import main
 from assert_no_inline_lint_disables.scanner import Finding
 
-
-def run_main_with_args(args: list[str]) -> int:
-    """Run main() with given args and return exit code."""
-    with patch.object(sys, "argv", ["test"] + args):
-        try:
-            main()
-            return 0  # main() always calls sys.exit(), so this is unreachable
-        except SystemExit as e:
-            return e.code if isinstance(e.code, int) else 1
+from ..conftest import run_main_with_args
 
 
 def create_mock_finding(path: str, line: int, linter: str, directive: str) -> Finding:
