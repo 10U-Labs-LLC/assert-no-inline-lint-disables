@@ -142,6 +142,7 @@ on:
     paths:
       - "*.md"
       - ".github/workflows/ci.yml"
+      - "action.yml"
       - "pyproject.toml"
       - "src/**"
       - "test/**"
@@ -151,6 +152,7 @@ on:
     paths:
       - "*.md"
       - ".github/workflows/ci.yml"
+      - "action.yml"
       - "pyproject.toml"
       - "src/**"
       - "test/**"
