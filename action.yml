@@ -51,11 +51,14 @@ runs:
         for pattern in ${{ inputs.allow }}; do
           ARGS="$ARGS --allow '$pattern'"
         done
-        # Quote patterns to prevent bash glob expansion - CLI handles it with hidden dir support
+        # Use set -f to disable glob expansion, then restore
+        # This ensures patterns like **/*.py are passed literally to the CLI
+        set -f
         FILES=""
         for pattern in ${{ inputs.files }}; do
           FILES="$FILES '$pattern'"
         done
+        set +f
         eval "assert-no-inline-lint-disables $ARGS $FILES"
       shell: bash
   using: composite
