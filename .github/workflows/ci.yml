@@ -20,7 +20,7 @@ jobs:
           directories: .
           linters: mypy,pylint,yamllint
           verbose: true
-      # TODO: uncomment after publishing new version with extension filter fix
+      # TODO: uncomment after publishing version with string literal fix
       # - continue-on-error: true
       #   id: no_inline_disables
       #   name: assert-no-inline-lint-disables

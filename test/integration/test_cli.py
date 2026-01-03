@@ -463,6 +463,107 @@ class TestCliVerbose:
 
 
 @pytest.mark.integration
+class TestCliStringLiteralHandling:
+    """Tests for string literal handling through the CLI."""
+
+    def test_single_quoted_string_not_detected(
+        self,
+        tmp_path: Path,
+        capsys: Any,
+    ) -> None:
+        """Directives in single-quoted strings are not detected."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("s = 'type: ignore'\n")
+        exit_code = run_main_with_args(["--linters", "mypy", str(test_file)])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+    def test_double_quoted_string_not_detected(
+        self,
+        tmp_path: Path,
+        capsys: Any,
+    ) -> None:
+        """Directives in double-quoted strings are not detected."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text('s = "type: ignore"\n')
+        exit_code = run_main_with_args(["--linters", "mypy", str(test_file)])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+    def test_triple_quoted_string_not_detected(
+        self,
+        tmp_path: Path,
+        capsys: Any,
+    ) -> None:
+        """Directives in triple-quoted strings are not detected."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text('s = """type: ignore"""\n')
+        exit_code = run_main_with_args(["--linters", "mypy", str(test_file)])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+    def test_triple_single_quoted_string_not_detected(
+        self,
+        tmp_path: Path,
+        capsys: Any,
+    ) -> None:
+        """Directives in triple single-quoted strings are not detected."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text("s = '''type: ignore'''\n")
+        exit_code = run_main_with_args(["--linters", "mypy", str(test_file)])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+    def test_multiline_triple_quoted_string_not_detected(
+        self,
+        tmp_path: Path,
+        capsys: Any,
+    ) -> None:
+        """Directives in multiline triple-quoted strings are not detected."""
+        test_file = tmp_path / "test.py"
+        content = '''s = """
+type: ignore
+pylint: disable
+"""
+'''
+        test_file.write_text(content)
+        exit_code = run_main_with_args(["--linters", "mypy,pylint", str(test_file)])
+        assert exit_code == 0
+        captured = capsys.readouterr()
+        assert captured.out == ""
+
+    def test_comment_after_string_detected(
+        self,
+        tmp_path: Path,
+        capsys: Any,
+    ) -> None:
+        """Directives in comments after strings are detected."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text('s = "hello"  # type: ignore\n')
+        exit_code = run_main_with_args(["--linters", "mypy", str(test_file)])
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "type: ignore" in captured.out
+
+    def test_escaped_quote_in_string(
+        self,
+        tmp_path: Path,
+        capsys: Any,
+    ) -> None:
+        """Escaped quotes in strings don't break parsing."""
+        test_file = tmp_path / "test.py"
+        test_file.write_text(r's = "escaped \" quote"  # type: ignore' + '\n')
+        exit_code = run_main_with_args(["--linters", "mypy", str(test_file)])
+        assert exit_code == 1
+        captured = capsys.readouterr()
+        assert "type: ignore" in captured.out
+
+
+@pytest.mark.integration
 class TestCliDirectoryHandling:
     """Tests for directory handling."""
 

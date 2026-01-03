@@ -30,6 +30,48 @@ class TestScanLineBasic:
 
 
 @pytest.mark.unit
+class TestScanLineStringLiterals:
+    """Tests that string literals do not trigger false positives."""
+
+    def test_string_literal_pylint_not_detected(self) -> None:
+        """Pylint directive in string literal is not detected."""
+        assert not scan_line('s = "pylint: disable=foo"', ALL)
+
+    def test_string_literal_mypy_not_detected(self) -> None:
+        """Mypy directive in string literal is not detected."""
+        assert not scan_line('s = "type: ignore"', ALL)
+
+    def test_string_literal_yamllint_not_detected(self) -> None:
+        """Yamllint directive in string literal is not detected."""
+        assert not scan_line('s = "yamllint disable"', ALL)
+
+    def test_regex_pattern_not_detected(self) -> None:
+        """Regex pattern definition is not detected."""
+        assert not scan_line('re.compile(r"pylint:\\s*disable")', ALL)
+
+    def test_fstring_with_directive_not_detected(self) -> None:
+        """F-string containing directive pattern is not detected."""
+        assert not scan_line('msg = f"Found: pylint: disable"', ALL)
+
+    def test_triple_quoted_string_not_detected(self) -> None:
+        """Triple-quoted string with directive is not detected."""
+        assert not scan_line('s = """# pylint: disable"""', ALL)
+
+    def test_triple_single_quoted_string_not_detected(self) -> None:
+        """Triple single-quoted string with directive is not detected."""
+        assert not scan_line("s = '''# type: ignore'''", ALL)
+
+    def test_comment_after_triple_quoted_string(self) -> None:
+        """Comment after triple-quoted string is detected."""
+        result = scan_line('s = """text"""  # pylint: disable=foo', ALL)
+        assert result == [("pylint", "pylint: disable")]
+
+    def test_directive_in_string_with_hash(self) -> None:
+        """String containing # followed by directive is not detected."""
+        assert not scan_line('s = "# pylint: disable=foo"', ALL)
+
+
+@pytest.mark.unit
 class TestScanLineYamllint:
     """Tests for yamllint directive detection."""
 

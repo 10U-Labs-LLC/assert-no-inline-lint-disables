@@ -104,8 +104,11 @@ config.yaml:5:yamllint:yamllint disable
 
 - Case-insensitive matching
 - Tolerates extra whitespace (e.g., `pylint:  disable`, `type:   ignore`)
-- Finds matches anywhere in the line
+- Only detects directives in comments (after `#`), not in string literals
 - Does **not** flag "enable" directives (e.g., `yamllint enable`)
+- Linters only check files with matching extensions:
+  - `yamllint`: `.yaml`, `.yml`
+  - `pylint`, `mypy`: `.py`
 
 ## License
 
