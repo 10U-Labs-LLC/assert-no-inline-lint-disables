@@ -29,8 +29,9 @@ class Finding:
 
 
 # Patterns for detecting inline lint-disable directives (suppressions only).
-# Each pattern uses \\s* to tolerate extra whitespace.
-# All patterns are case-insensitive.
+# Uses \\s* to tolerate extra whitespace. All patterns are case-insensitive.
+# Note: These patterns are applied only to the comment portion of a line
+# (after the first # that is not inside a string literal).
 
 YAMLLINT_PATTERNS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"yamllint\s+disable-line", re.IGNORECASE), "yamllint disable-line"),
@@ -57,11 +58,56 @@ LINTER_PATTERNS: dict[str, list[tuple[re.Pattern[str], str]]] = {
 }
 
 
+def _get_comment_portion(
+    line: str,
+    in_string: str | None,
+) -> tuple[str | None, str | None]:
+    """Get the comment portion of a line, tracking multiline string state.
+
+    Handles single quotes, double quotes, and triple-quoted strings.
+
+    Args:
+        line: The line of text to scan.
+        in_string: Current string state (None, '"', "'", '\"\"\"', or "'''").
+
+    Returns:
+        Tuple of (comment_portion, new_string_state).
+        comment_portion is None if the line has no comment outside strings.
+    """
+    i = 0
+    while i < len(line):
+        char = line[i]
+        if in_string:
+            # Check for end of string
+            if len(in_string) == 3:
+                # Triple-quoted string
+                if line[i:i + 3] == in_string:
+                    in_string = None
+                    i += 2  # Skip the extra 2 chars
+            elif char == in_string and (i == 0 or line[i - 1] != "\\"):
+                in_string = None
+        else:
+            # Check for start of string
+            if line[i:i + 3] in ('"""', "'''"):
+                in_string = line[i:i + 3]
+                i += 2  # Skip the extra 2 chars
+            elif char in ('"', "'"):
+                in_string = char
+            elif char == "#":
+                return line[i:], in_string
+        i += 1
+    return None, in_string
+
+
 def scan_line(
     line: str,
     linters: frozenset[str],
 ) -> list[tuple[str, str]]:
     """Scan a single line for inline lint-disable directives.
+
+    Only searches the comment portion of the line (after # not in a string).
+    Note: This function does not handle multiline strings. Use scan_file
+    for proper multiline string handling.
 
     Args:
         line: The line of text to scan.
@@ -70,11 +116,15 @@ def scan_line(
     Returns:
         A list of (linter, directive) tuples for each finding.
     """
+    comment, _ = _get_comment_portion(line, None)
+    if comment is None:
+        return []
+
     findings: list[tuple[str, str]] = []
     for linter in linters:
         patterns = LINTER_PATTERNS.get(linter, [])
         for pattern, directive in patterns:
-            if pattern.search(line):
+            if pattern.search(comment):
                 findings.append((linter, directive))
                 break  # Only report one finding per linter per line
     return findings
@@ -87,6 +137,8 @@ def scan_file(
     allow_patterns: list[str] | None = None,
 ) -> list[Finding]:
     """Scan file content for inline lint-disable directives.
+
+    Properly handles multiline strings by tracking string state across lines.
 
     Args:
         path: The file path (used for reporting).
@@ -101,8 +153,22 @@ def scan_file(
         allow_patterns = []
 
     findings: list[Finding] = []
+    in_string: str | None = None
     for line_number, line in enumerate(content.splitlines(), start=1):
-        for linter, directive in scan_line(line, linters):
+        comment, in_string = _get_comment_portion(line, in_string)
+        if comment is None:
+            continue
+
+        # Find all matching directives in this line's comment
+        line_findings: list[tuple[str, str]] = []
+        for linter in linters:
+            patterns = LINTER_PATTERNS.get(linter, [])
+            for pattern, directive in patterns:
+                if pattern.search(comment):
+                    line_findings.append((linter, directive))
+                    break  # Only one finding per linter per line
+
+        for linter, directive in line_findings:
             # Check if this directive matches any allow pattern
             is_allowed = any(
                 allow_pat.lower() in line.lower()
