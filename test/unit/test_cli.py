@@ -163,10 +163,9 @@ class TestFlags:
                 "--allow", "too-many-args",
                 str(test_file),
             ])
-        # Verify allow patterns were passed
-        call_args = mock.call_args
-        assert call_args is not None
-        assert "too-many-args" in call_args[0][3]  # allow_patterns is 4th arg
+        # Verify allow patterns were passed (call_args is guaranteed non-None
+        # since mock_scan_file is configured with return value)
+        assert "too-many-args" in mock.call_args[0][3]  # allow_patterns is 4th arg
 
     def test_exclude_skips_matching_files(self, tmp_path: Path) -> None:
         """Exclude flag skips matching files."""

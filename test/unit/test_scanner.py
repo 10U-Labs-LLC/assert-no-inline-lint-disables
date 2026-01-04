@@ -321,13 +321,12 @@ class TestScanFile:
         """File with one directive returns one finding."""
         content = "x = 1  # type: ignore\n"
         findings = scan_file("test.py", content, ALL, [])
-        assert len(findings) == 1
-        assert findings[0] == Finding(
+        assert findings == [Finding(
             path="test.py",
             line_number=1,
             tool="mypy",
             directive="type: ignore",
-        )
+        )]
 
     def test_multiple_findings_different_lines_count(self) -> None:
         """File with directives on different lines - returns count of 2."""
@@ -395,12 +394,22 @@ class TestScanFile:
         )
         assert str(finding) == "src/foo.py:42:pylint:pylint: disable"
 
-    def test_coverage_finding(self) -> None:
-        """File with coverage directive returns finding."""
+    def test_coverage_finding_count(self) -> None:
+        """File with coverage directive returns one finding."""
         content = "if DEBUG:  # pragma: no cover\n    pass\n"
         findings = scan_file("test.py", content, ALL, [])
         assert len(findings) == 1
+
+    def test_coverage_finding_tool(self) -> None:
+        """File with coverage directive - finding has tool 'coverage'."""
+        content = "if DEBUG:  # pragma: no cover\n    pass\n"
+        findings = scan_file("test.py", content, ALL, [])
         assert findings[0].tool == "coverage"
+
+    def test_coverage_finding_directive(self) -> None:
+        """File with coverage directive - finding has correct directive."""
+        content = "if DEBUG:  # pragma: no cover\n    pass\n"
+        findings = scan_file("test.py", content, ALL, [])
         assert findings[0].directive == "pragma: no cover"
 
 
@@ -408,11 +417,16 @@ class TestScanFile:
 class TestScanFileToolFiltering:
     """Tests for tool filtering in scan_file."""
 
-    def test_filter_single_tool(self) -> None:
-        """Only detects specified tool in file."""
+    def test_filter_single_tool_count(self) -> None:
+        """Only detects specified tool - returns one finding."""
         content = "# pylint: disable=foo\nx = 1  # type: ignore\n"
         findings = scan_file("test.py", content, frozenset({"mypy"}), [])
         assert len(findings) == 1
+
+    def test_filter_single_tool_name(self) -> None:
+        """Only detects specified tool - finding has correct tool."""
+        content = "# pylint: disable=foo\nx = 1  # type: ignore\n"
+        findings = scan_file("test.py", content, frozenset({"mypy"}), [])
         assert findings[0].tool == "mypy"
 
     def test_filter_excludes_other_tools(self) -> None:
@@ -421,11 +435,16 @@ class TestScanFileToolFiltering:
         findings = scan_file("test.py", content, frozenset({"mypy"}), [])
         assert not findings
 
-    def test_filter_coverage(self) -> None:
-        """Filter to only coverage directives."""
+    def test_filter_coverage_count(self) -> None:
+        """Filter to only coverage - returns one finding."""
         content = "# pragma: no cover\n# pylint: disable=foo\n"
         findings = scan_file("test.py", content, frozenset({"coverage"}), [])
         assert len(findings) == 1
+
+    def test_filter_coverage_tool(self) -> None:
+        """Filter to only coverage - finding has correct tool."""
+        content = "# pragma: no cover\n# pylint: disable=foo\n"
+        findings = scan_file("test.py", content, frozenset({"coverage"}), [])
         assert findings[0].tool == "coverage"
 
 
@@ -445,14 +464,22 @@ class TestScanFileAllowPatterns:
         findings = scan_file("test.py", content, ALL, ["type: ignore[import]"])
         assert not findings
 
-    def test_allow_does_not_affect_others(self) -> None:
-        """Allow pattern only affects matching directives."""
+    def test_allow_does_not_affect_others_count(self) -> None:
+        """Allow pattern only affects matching - one finding remains."""
         content = (
             "x = foo()  # type: ignore[import]\n"
             "y = bar()  # type: ignore\n"
         )
         findings = scan_file("test.py", content, ALL, ["type: ignore[import]"])
         assert len(findings) == 1
+
+    def test_allow_does_not_affect_others_line(self) -> None:
+        """Allow pattern only affects matching - remaining is on line 2."""
+        content = (
+            "x = foo()  # type: ignore[import]\n"
+            "y = bar()  # type: ignore\n"
+        )
+        findings = scan_file("test.py", content, ALL, ["type: ignore[import]"])
         assert findings[0].line_number == 2
 
     def test_allow_case_insensitive(self) -> None:
