@@ -1174,3 +1174,225 @@ class TestCliGlobPatterns:
             "--tools", "mypy", str(tmp_path / "no_match_*.py")
         ])
         assert "no_match_*.py" in capsys.readouterr().err
+
+
+# --- clang tool integration tests ---
+
+
+@pytest.mark.integration
+class TestCliClangTidyIntegration:
+    """Integration tests for clang-tidy tool via CLI."""
+
+    def test_exit_1_with_nolint(self, tmp_path: Path) -> None:
+        """Exit code 1 for file with NOLINT."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text("int x = 1; // NOLINT\n")
+        exit_code = run_main_with_args([
+            "--tools", "clang-tidy", str(test_file)
+        ])
+        assert exit_code == 1
+
+    def test_output_contains_nolint(
+        self, tmp_path: Path, capsys: Any
+    ) -> None:
+        """Output contains NOLINT directive."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text("int x = 1; // NOLINT\n")
+        run_main_with_args(["--tools", "clang-tidy", str(test_file)])
+        captured = capsys.readouterr()
+        assert "NOLINT" in captured.out
+
+    def test_exit_0_clean_cpp_file(self, tmp_path: Path) -> None:
+        """Exit code 0 for clean C++ file."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text("int main() {\n    return 0;\n}\n")
+        exit_code = run_main_with_args([
+            "--tools", "clang-tidy", str(test_file)
+        ])
+        assert exit_code == 0
+
+    def test_nolintnextline_detected(
+        self, tmp_path: Path, capsys: Any
+    ) -> None:
+        """NOLINTNEXTLINE is detected."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text("// NOLINTNEXTLINE\nint x = 1;\n")
+        run_main_with_args(["--tools", "clang-tidy", str(test_file)])
+        captured = capsys.readouterr()
+        assert "NOLINTNEXTLINE" in captured.out
+
+    def test_nolintbegin_detected(
+        self, tmp_path: Path, capsys: Any
+    ) -> None:
+        """NOLINTBEGIN is detected."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text("// NOLINTBEGIN\nint x = 1;\n// NOLINTEND\n")
+        run_main_with_args(["--tools", "clang-tidy", str(test_file)])
+        captured = capsys.readouterr()
+        assert "NOLINTBEGIN" in captured.out
+
+    def test_nolintend_not_detected(self, tmp_path: Path) -> None:
+        """NOLINTEND is not detected (enable directive)."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text("// NOLINTEND\n")
+        exit_code = run_main_with_args([
+            "--tools", "clang-tidy", str(test_file)
+        ])
+        assert exit_code == 0
+
+
+@pytest.mark.integration
+class TestCliClangFormatIntegration:
+    """Integration tests for clang-format tool via CLI."""
+
+    def test_exit_1_with_clang_format_off(self, tmp_path: Path) -> None:
+        """Exit code 1 for file with clang-format off."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text("// clang-format off\nint x=1;\n")
+        exit_code = run_main_with_args([
+            "--tools", "clang-format", str(test_file)
+        ])
+        assert exit_code == 1
+
+    def test_output_contains_clang_format_off(
+        self, tmp_path: Path, capsys: Any
+    ) -> None:
+        """Output contains clang-format off directive."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text("// clang-format off\nint x=1;\n")
+        run_main_with_args(["--tools", "clang-format", str(test_file)])
+        captured = capsys.readouterr()
+        assert "clang-format off" in captured.out
+
+    def test_clang_format_on_not_detected(self, tmp_path: Path) -> None:
+        """clang-format on is not detected (enable directive)."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text("// clang-format on\n")
+        exit_code = run_main_with_args([
+            "--tools", "clang-format", str(test_file)
+        ])
+        assert exit_code == 0
+
+
+@pytest.mark.integration
+class TestCliClangDiagnosticIntegration:
+    """Integration tests for clang-diagnostic tool via CLI."""
+
+    def test_exit_1_with_pragma_ignored(self, tmp_path: Path) -> None:
+        """Exit code 1 for file with #pragma clang diagnostic ignored."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text(
+            '#pragma clang diagnostic ignored "-Wfoo"\nint x = 1;\n'
+        )
+        exit_code = run_main_with_args([
+            "--tools", "clang-diagnostic", str(test_file)
+        ])
+        assert exit_code == 1
+
+    def test_output_contains_pragma(
+        self, tmp_path: Path, capsys: Any
+    ) -> None:
+        """Output contains #pragma directive."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text(
+            '#pragma clang diagnostic ignored "-Wfoo"\nint x = 1;\n'
+        )
+        run_main_with_args(["--tools", "clang-diagnostic", str(test_file)])
+        captured = capsys.readouterr()
+        assert "#pragma clang diagnostic ignored" in captured.out
+
+    def test_pragma_push_not_detected(self, tmp_path: Path) -> None:
+        """#pragma clang diagnostic push is not detected."""
+        test_file = tmp_path / "test.cpp"
+        test_file.write_text("#pragma clang diagnostic push\n")
+        exit_code = run_main_with_args([
+            "--tools", "clang-diagnostic", str(test_file)
+        ])
+        assert exit_code == 0
+
+
+@pytest.mark.integration
+class TestCliClangExtensionFiltering:
+    """Integration tests for clang tool file extension filtering."""
+
+    def test_clang_tidy_only_scans_cpp_includes(
+        self, tmp_path: Path, capsys: Any
+    ) -> None:
+        """clang-tidy scans .cpp files."""
+        cpp_file = tmp_path / "test.cpp"
+        py_file = tmp_path / "test.py"
+        cpp_file.write_text("int x = 1; // NOLINT\n")
+        py_file.write_text("int x = 1; // NOLINT\n")  # wrong extension
+        run_main_with_args([
+            "--tools", "clang-tidy",
+            str(cpp_file),
+            str(py_file),
+        ])
+        captured = capsys.readouterr()
+        assert "test.cpp" in captured.out
+
+    def test_clang_tidy_skips_py_files(
+        self, tmp_path: Path, capsys: Any
+    ) -> None:
+        """clang-tidy skips .py files."""
+        cpp_file = tmp_path / "test.cpp"
+        py_file = tmp_path / "test.py"
+        cpp_file.write_text("int x = 1; // NOLINT\n")
+        py_file.write_text("int x = 1; // NOLINT\n")
+        run_main_with_args([
+            "--tools", "clang-tidy",
+            str(cpp_file),
+            str(py_file),
+        ])
+        captured = capsys.readouterr()
+        assert "test.py" not in captured.out
+
+    def test_clang_tidy_scans_c_file(self, tmp_path: Path) -> None:
+        """clang-tidy scans .c files."""
+        c_file = tmp_path / "test.c"
+        c_file.write_text("int x = 1; // NOLINT\n")
+        exit_code = run_main_with_args([
+            "--tools", "clang-tidy", str(c_file)
+        ])
+        assert exit_code == 1
+
+    def test_clang_tidy_scans_h_file(self, tmp_path: Path) -> None:
+        """clang-tidy scans .h files."""
+        h_file = tmp_path / "test.h"
+        h_file.write_text("int x = 1; // NOLINT\n")
+        exit_code = run_main_with_args([
+            "--tools", "clang-tidy", str(h_file)
+        ])
+        assert exit_code == 1
+
+    def test_combined_clang_and_python_tools(
+        self, tmp_path: Path, capsys: Any
+    ) -> None:
+        """Combined clang and Python tools scan appropriate files."""
+        cpp_file = tmp_path / "test.cpp"
+        py_file = tmp_path / "test.py"
+        cpp_file.write_text("int x = 1; // NOLINT\n")
+        py_file.write_text("x = 1  # type: ignore\n")
+        run_main_with_args([
+            "--tools", "clang-tidy,mypy",
+            str(cpp_file),
+            str(py_file),
+        ])
+        captured = capsys.readouterr()
+        assert "NOLINT" in captured.out
+
+    def test_combined_clang_and_python_tools_mypy(
+        self, tmp_path: Path, capsys: Any
+    ) -> None:
+        """Combined clang and Python tools detect mypy in .py files."""
+        cpp_file = tmp_path / "test.cpp"
+        py_file = tmp_path / "test.py"
+        cpp_file.write_text("int x = 1; // NOLINT\n")
+        py_file.write_text("x = 1  # type: ignore\n")
+        run_main_with_args([
+            "--tools", "clang-tidy,mypy",
+            str(cpp_file),
+            str(py_file),
+        ])
+        captured = capsys.readouterr()
+        assert "type: ignore" in captured.out

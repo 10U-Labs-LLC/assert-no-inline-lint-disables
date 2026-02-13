@@ -1,7 +1,7 @@
 # assert-no-inline-directives
 
 A CLI tool to assert that files contain no inline directives for
-yamllint, pylint, mypy, and coverage.
+yamllint, pylint, mypy, coverage, clang-tidy, clang-format, and clang-diagnostic.
 
 ## Installation
 
@@ -17,7 +17,7 @@ assert-no-inline-directives --tools TOOLS [OPTIONS] PATH [PATH ...]
 
 ### Required Arguments
 
-- `--tools TOOLS` - Comma-separated list of tools: `coverage,mypy,pylint,yamllint`
+- `--tools TOOLS` - Comma-separated list of tools: `clang-diagnostic,clang-format,clang-tidy,coverage,mypy,pylint,yamllint`
 - `PATH` - One or more file paths, directory paths, or glob patterns to scan
   (directories are scanned recursively, globs support hidden directories)
 
@@ -43,9 +43,15 @@ assert-no-inline-directives --tools pylint,mypy src/
 # Use glob patterns (including hidden directories like .github)
 assert-no-inline-directives --tools yamllint "**/*.yml" "**/*.yaml"
 
-# Check all tools, exclude vendor files
+# Check all Python/YAML tools, exclude vendor files
 assert-no-inline-directives --tools coverage,mypy,pylint,yamllint \
     --exclude "*vendor*" src/ config/
+
+# Check for clang-tidy NOLINT directives in C++ files
+assert-no-inline-directives --tools clang-tidy "**/*.cpp" "**/*.h"
+
+# Check all clang tools
+assert-no-inline-directives --tools clang-tidy,clang-format,clang-diagnostic src/
 
 # Allow specific type: ignore patterns
 assert-no-inline-directives --tools mypy \
@@ -79,6 +85,7 @@ src/example.py:10:pylint:pylint: disable
 src/example.py:15:mypy:type: ignore
 src/example.py:20:coverage:pragma: no cover
 config.yaml:5:yamllint:yamllint disable
+src/main.cpp:8:clang-tidy:NOLINT
 ```
 
 **Count format** (`--count`):
@@ -112,15 +119,33 @@ config.yaml:5:yamllint:yamllint disable
 - `yamllint disable`
 - `yamllint disable-file`
 
+### clang-tidy (suppressions only)
+
+- `NOLINT` (including check-specific forms like `NOLINT(bugprone-*)`)
+- `NOLINTNEXTLINE`
+- `NOLINTBEGIN`
+
+### clang-format (suppressions only)
+
+- `clang-format off`
+
+### clang-diagnostic (suppressions only)
+
+- `#pragma clang diagnostic ignored`
+
 ## Matching Behavior
 
 - Case-insensitive matching
 - Tolerates extra whitespace (e.g., `pylint:  disable`, `type:   ignore`)
-- Only detects directives in comments (after `#`), not in string literals
-- Does **not** flag "enable" directives (e.g., `yamllint enable`)
+- Only detects directives in comments (after `#` for Python/YAML, `//` and `/* */` for C/C++), not in string literals
+- `clang-diagnostic` matches `#pragma` preprocessor directives on the full line
+- Does **not** flag "enable" directives (e.g., `yamllint enable`, `NOLINTEND`, `clang-format on`)
 - Files are scanned in alphabetical order for consistent output
 - Glob patterns support hidden directories (e.g., `.github`)
 - Tools only check files with matching extensions:
+  - `clang-diagnostic`: `.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hpp`, `.hxx`, `.m`, `.mm`
+  - `clang-format`: `.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hpp`, `.hxx`, `.m`, `.mm`
+  - `clang-tidy`: `.c`, `.cc`, `.cpp`, `.cxx`, `.h`, `.hpp`, `.hxx`, `.m`, `.mm`
   - `coverage`: `.py`, `.toml`
   - `mypy`: `.py`, `.toml`
   - `pylint`: `.py`, `.toml`

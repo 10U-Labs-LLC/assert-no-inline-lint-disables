@@ -652,3 +652,569 @@ class TestGetToolsForExtension:
         """Extension matching is case insensitive."""
         result = get_tools_for_extension(".PY", ALL)
         assert result == frozenset({"pylint", "mypy", "coverage"})
+
+
+# --- clang-tidy tests ---
+
+
+@pytest.mark.unit
+class TestScanLineClangTidy:
+    """Tests for clang-tidy directive detection."""
+
+    def test_nolint(self) -> None:
+        """Detects NOLINT directive in C++ comment."""
+        result = scan_line("int x = 1; // NOLINT", ALL, c_style_comments=True)
+        assert result == [("clang-tidy", "NOLINT")]
+
+    def test_nolint_with_check(self) -> None:
+        """Detects NOLINT with check name."""
+        result = scan_line(
+            "int x = 1; // NOLINT(bugprone-use-after-move)",
+            ALL,
+            c_style_comments=True,
+        )
+        assert result == [("clang-tidy", "NOLINT")]
+
+    def test_nolintnextline(self) -> None:
+        """Detects NOLINTNEXTLINE directive."""
+        result = scan_line(
+            "// NOLINTNEXTLINE(modernize-use-nullptr)",
+            ALL,
+            c_style_comments=True,
+        )
+        assert result == [("clang-tidy", "NOLINTNEXTLINE")]
+
+    def test_nolintbegin(self) -> None:
+        """Detects NOLINTBEGIN directive."""
+        result = scan_line(
+            "// NOLINTBEGIN(readability-*)",
+            ALL,
+            c_style_comments=True,
+        )
+        assert result == [("clang-tidy", "NOLINTBEGIN")]
+
+    def test_nolintend_not_detected(self) -> None:
+        """Does not detect NOLINTEND directive (enable)."""
+        assert not scan_line("// NOLINTEND", ALL, c_style_comments=True)
+
+    def test_nolint_block_comment(self) -> None:
+        """Detects NOLINT in block comment."""
+        result = scan_line(
+            "int x = 1; /* NOLINT */",
+            ALL,
+            c_style_comments=True,
+        )
+        assert result == [("clang-tidy", "NOLINT")]
+
+    def test_nolint_only_with_clang_tidy_tool(self) -> None:
+        """NOLINT only detected when clang-tidy tool is specified."""
+        assert not scan_line(
+            "int x = 1; // NOLINT",
+            frozenset({"pylint"}),
+            c_style_comments=True,
+        )
+
+
+# --- clang-format tests ---
+
+
+@pytest.mark.unit
+class TestScanLineClangFormat:
+    """Tests for clang-format directive detection."""
+
+    def test_clang_format_off(self) -> None:
+        """Detects clang-format off directive."""
+        result = scan_line(
+            "// clang-format off", ALL, c_style_comments=True
+        )
+        assert result == [("clang-format", "clang-format off")]
+
+    def test_clang_format_on_not_detected(self) -> None:
+        """Does not detect clang-format on directive (enable)."""
+        assert not scan_line(
+            "// clang-format on", ALL, c_style_comments=True
+        )
+
+    def test_clang_format_off_only_with_clang_format_tool(self) -> None:
+        """clang-format off only detected when clang-format tool is specified."""
+        assert not scan_line(
+            "// clang-format off",
+            frozenset({"clang-tidy"}),
+            c_style_comments=True,
+        )
+
+
+# --- clang-diagnostic tests ---
+
+
+@pytest.mark.unit
+class TestScanLineClangDiagnostic:
+    """Tests for clang-diagnostic directive detection."""
+
+    def test_pragma_clang_diagnostic_ignored(self) -> None:
+        """Detects #pragma clang diagnostic ignored."""
+        result = scan_line(
+            '#pragma clang diagnostic ignored "-Wunused-variable"',
+            ALL,
+            c_style_comments=True,
+        )
+        assert result == [
+            ("clang-diagnostic", "#pragma clang diagnostic ignored")
+        ]
+
+    def test_pragma_with_leading_whitespace(self) -> None:
+        """Detects #pragma with leading whitespace."""
+        result = scan_line(
+            '  #pragma clang diagnostic ignored "-Wfoo"',
+            ALL,
+            c_style_comments=True,
+        )
+        assert result == [
+            ("clang-diagnostic", "#pragma clang diagnostic ignored")
+        ]
+
+    def test_pragma_push_not_detected(self) -> None:
+        """Does not detect #pragma clang diagnostic push."""
+        assert not scan_line(
+            "#pragma clang diagnostic push",
+            ALL,
+            c_style_comments=True,
+        )
+
+    def test_pragma_pop_not_detected(self) -> None:
+        """Does not detect #pragma clang diagnostic pop."""
+        assert not scan_line(
+            "#pragma clang diagnostic pop",
+            ALL,
+            c_style_comments=True,
+        )
+
+    def test_commented_out_pragma_not_detected(self) -> None:
+        """Does not detect commented-out #pragma."""
+        assert not scan_line(
+            '// #pragma clang diagnostic ignored "-Wfoo"',
+            ALL,
+            c_style_comments=True,
+        )
+
+    def test_pragma_only_with_clang_diagnostic_tool(self) -> None:
+        """#pragma only detected when clang-diagnostic tool is specified."""
+        assert not scan_line(
+            '#pragma clang diagnostic ignored "-Wfoo"',
+            frozenset({"clang-tidy"}),
+            c_style_comments=True,
+        )
+
+
+# --- clang enable directives not detected ---
+
+
+@pytest.mark.unit
+class TestScanLineClangEnableNotDetected:
+    """Verify that clang enable directives are NOT detected."""
+
+    def test_nolintend_not_detected(self) -> None:
+        """NOLINTEND is not detected."""
+        assert not scan_line("// NOLINTEND", ALL, c_style_comments=True)
+
+    def test_clang_format_on_not_detected(self) -> None:
+        """clang-format on is not detected."""
+        assert not scan_line(
+            "// clang-format on", ALL, c_style_comments=True
+        )
+
+    def test_pragma_diagnostic_push_not_detected(self) -> None:
+        """#pragma clang diagnostic push is not detected."""
+        assert not scan_line(
+            "#pragma clang diagnostic push",
+            ALL,
+            c_style_comments=True,
+        )
+
+    def test_pragma_diagnostic_pop_not_detected(self) -> None:
+        """#pragma clang diagnostic pop is not detected."""
+        assert not scan_line(
+            "#pragma clang diagnostic pop",
+            ALL,
+            c_style_comments=True,
+        )
+
+
+# --- clang case insensitivity ---
+
+
+@pytest.mark.unit
+class TestScanLineClangCaseInsensitivity:
+    """Tests for case-insensitive matching of clang directives."""
+
+    def test_case_insensitive_nolint(self) -> None:
+        """NOLINT detection is case-insensitive."""
+        result = scan_line("int x = 1; // nolint", ALL, c_style_comments=True)
+        assert result == [("clang-tidy", "NOLINT")]
+
+    def test_case_insensitive_nolintnextline(self) -> None:
+        """NOLINTNEXTLINE detection is case-insensitive."""
+        result = scan_line(
+            "// NoLintNextLine", ALL, c_style_comments=True
+        )
+        assert result == [("clang-tidy", "NOLINTNEXTLINE")]
+
+    def test_case_insensitive_clang_format_off(self) -> None:
+        """clang-format off detection is case-insensitive."""
+        result = scan_line(
+            "// CLANG-FORMAT OFF", ALL, c_style_comments=True
+        )
+        assert result == [("clang-format", "clang-format off")]
+
+    def test_case_insensitive_pragma(self) -> None:
+        """#pragma detection is case-insensitive."""
+        result = scan_line(
+            '#PRAGMA CLANG DIAGNOSTIC IGNORED "-Wfoo"',
+            ALL,
+            c_style_comments=True,
+        )
+        assert result == [
+            ("clang-diagnostic", "#pragma clang diagnostic ignored")
+        ]
+
+
+# --- clang whitespace tolerance ---
+
+
+@pytest.mark.unit
+class TestScanLineClangWhitespace:
+    """Tests for whitespace tolerance in clang directives."""
+
+    def test_extra_whitespace_clang_format(self) -> None:
+        """Tolerates extra whitespace in clang-format off."""
+        result = scan_line(
+            "// clang-format   off", ALL, c_style_comments=True
+        )
+        assert result == [("clang-format", "clang-format off")]
+
+    def test_extra_whitespace_pragma(self) -> None:
+        """Tolerates extra whitespace in #pragma."""
+        result = scan_line(
+            '#pragma  clang  diagnostic  ignored "-Wfoo"',
+            ALL,
+            c_style_comments=True,
+        )
+        assert result == [
+            ("clang-diagnostic", "#pragma clang diagnostic ignored")
+        ]
+
+
+# --- clang C/C++ string literal false positives ---
+
+
+@pytest.mark.unit
+class TestScanLineClangStringLiterals:
+    """Tests that C/C++ string literals do not trigger false positives."""
+
+    def test_nolint_in_string_not_detected(self) -> None:
+        """NOLINT in string literal is not detected."""
+        assert not scan_line(
+            'const char* s = "NOLINT";', ALL, c_style_comments=True
+        )
+
+    def test_clang_format_off_in_string_not_detected(self) -> None:
+        """clang-format off in string literal is not detected."""
+        assert not scan_line(
+            'const char* s = "clang-format off";', ALL, c_style_comments=True
+        )
+
+    def test_nolint_after_string_detected(self) -> None:
+        """NOLINT in comment after string is detected."""
+        result = scan_line(
+            'const char* s = "text"; // NOLINT', ALL, c_style_comments=True
+        )
+        assert result == [("clang-tidy", "NOLINT")]
+
+    def test_nolint_in_char_literal_not_detected(self) -> None:
+        """Char literal containing quote does not break parsing."""
+        result = scan_line(
+            "char c = '\"'; // NOLINT", ALL, c_style_comments=True
+        )
+        assert result == [("clang-tidy", "NOLINT")]
+
+    def test_escaped_quote_in_string_not_detected(self) -> None:
+        """Escaped quote in string does not break parsing."""
+        result = scan_line(
+            r'const char* s = "escaped \" NOLINT"; // NOLINT',
+            ALL,
+            c_style_comments=True,
+        )
+        assert result == [("clang-tidy", "NOLINT")]
+
+    def test_escaped_single_quote_in_char_literal(self) -> None:
+        """Escaped single quote in char literal does not break parsing."""
+        result = scan_line(
+            r"char c = '\''; // NOLINT",
+            ALL,
+            c_style_comments=True,
+        )
+        assert result == [("clang-tidy", "NOLINT")]
+
+
+# --- scan_file with C/C++ files ---
+
+
+@pytest.mark.unit
+class TestScanFileClang:
+    """Tests for scan_file with C/C++ files."""
+
+    def test_cpp_file_nolint_detected(self) -> None:
+        """NOLINT in C++ file is detected."""
+        content = "int x = 1; // NOLINT\n"
+        findings = scan_file("test.cpp", content, ALL, [])
+        assert findings == [Finding(
+            path="test.cpp",
+            line_number=1,
+            tool="clang-tidy",
+            directive="NOLINT",
+        )]
+
+    def test_c_file_nolint_detected(self) -> None:
+        """NOLINT in C file is detected."""
+        content = "int x = 1; // NOLINT\n"
+        findings = scan_file("test.c", content, ALL, [])
+        assert findings == [Finding(
+            path="test.c",
+            line_number=1,
+            tool="clang-tidy",
+            directive="NOLINT",
+        )]
+
+    def test_h_file_nolint_detected(self) -> None:
+        """NOLINT in header file is detected."""
+        content = "int x = 1; // NOLINT\n"
+        findings = scan_file("test.h", content, ALL, [])
+        assert findings == [Finding(
+            path="test.h",
+            line_number=1,
+            tool="clang-tidy",
+            directive="NOLINT",
+        )]
+
+    def test_hpp_file_clang_format_off_detected(self) -> None:
+        """clang-format off in .hpp file is detected."""
+        content = "// clang-format off\nint x = 1;\n"
+        findings = scan_file("test.hpp", content, ALL, [])
+        assert findings == [Finding(
+            path="test.hpp",
+            line_number=1,
+            tool="clang-format",
+            directive="clang-format off",
+        )]
+
+    def test_cpp_file_pragma_detected(self) -> None:
+        """#pragma clang diagnostic ignored in .cpp file is detected."""
+        content = '#pragma clang diagnostic ignored "-Wfoo"\nint x = 1;\n'
+        findings = scan_file("test.cpp", content, ALL, [])
+        assert findings == [Finding(
+            path="test.cpp",
+            line_number=1,
+            tool="clang-diagnostic",
+            directive="#pragma clang diagnostic ignored",
+        )]
+
+    def test_cpp_file_no_findings(self) -> None:
+        """Clean C++ file returns no findings."""
+        content = "int main() {\n    return 0;\n}\n"
+        assert not scan_file("test.cpp", content, ALL, [])
+
+    def test_cpp_file_multiple_findings_count(self) -> None:
+        """C++ file with multiple directives returns all findings."""
+        content = (
+            "// NOLINT\n"
+            "int x = 1;\n"
+            "// clang-format off\n"
+        )
+        findings = scan_file("test.cpp", content, ALL, [])
+        assert len(findings) == 2
+
+    def test_mm_file_nolint_detected(self) -> None:
+        """NOLINT in Objective-C++ file is detected."""
+        content = "int x = 1; // NOLINT\n"
+        findings = scan_file("test.mm", content, ALL, [])
+        assert findings == [Finding(
+            path="test.mm",
+            line_number=1,
+            tool="clang-tidy",
+            directive="NOLINT",
+        )]
+
+
+# --- scan_file with C/C++ block comments ---
+
+
+@pytest.mark.unit
+class TestScanFileClangBlockComments:
+    """Tests for block comment handling in C/C++ files."""
+
+    def test_nolint_in_block_comment(self) -> None:
+        """NOLINT in block comment is detected."""
+        content = "int x = 1; /* NOLINT */\n"
+        findings = scan_file("test.cpp", content, ALL, [])
+        assert findings == [Finding(
+            path="test.cpp",
+            line_number=1,
+            tool="clang-tidy",
+            directive="NOLINT",
+        )]
+
+    def test_nolint_in_multiline_block_comment(self) -> None:
+        """NOLINT in multiline block comment is detected."""
+        content = "/*\n * NOLINT\n */\n"
+        findings = scan_file("test.cpp", content, ALL, [])
+        assert findings == [Finding(
+            path="test.cpp",
+            line_number=2,
+            tool="clang-tidy",
+            directive="NOLINT",
+        )]
+
+    def test_directive_in_string_not_in_block_comment(self) -> None:
+        """Directive in string within block comment context is not detected."""
+        content = 'const char* s = "NOLINT";\n'
+        assert not scan_file("test.cpp", content, ALL, [])
+
+    def test_multiline_block_comment_no_false_positive(self) -> None:
+        """Code after multiline block comment is not falsely detected."""
+        content = "/*\n * comment\n */\nint x = 1;\n"
+        assert not scan_file("test.cpp", content, ALL, [])
+
+
+# --- scan_file: #pragma inside block comment NOT detected ---
+
+
+@pytest.mark.unit
+class TestScanFileClangDiagnosticInBlockComment:
+    """Tests that #pragma inside block comments is not detected."""
+
+    def test_pragma_in_block_comment_not_detected(self) -> None:
+        """#pragma inside block comment is not detected."""
+        content = (
+            "/*\n"
+            '#pragma clang diagnostic ignored "-Wfoo"\n'
+            "*/\n"
+        )
+        assert not scan_file("test.cpp", content, ALL, [])
+
+    def test_pragma_after_block_comment_detected(self) -> None:
+        """#pragma after block comment ends is detected."""
+        content = (
+            "/* comment */\n"
+            '#pragma clang diagnostic ignored "-Wfoo"\n'
+        )
+        findings = scan_file("test.cpp", content, ALL, [])
+        assert len(findings) == 1
+
+
+# --- Updated parse_tools tests ---
+
+
+@pytest.mark.unit
+class TestParseToolsClang:
+    """Tests for parse_tools with clang tools."""
+
+    def test_clang_tidy(self) -> None:
+        """Parses clang-tidy tool."""
+        result = parse_tools("clang-tidy")
+        assert result == frozenset({"clang-tidy"})
+
+    def test_clang_format(self) -> None:
+        """Parses clang-format tool."""
+        result = parse_tools("clang-format")
+        assert result == frozenset({"clang-format"})
+
+    def test_clang_diagnostic(self) -> None:
+        """Parses clang-diagnostic tool."""
+        result = parse_tools("clang-diagnostic")
+        assert result == frozenset({"clang-diagnostic"})
+
+    def test_all_tools_including_clang(self) -> None:
+        """Parses all seven tools."""
+        result = parse_tools(
+            "yamllint,pylint,mypy,coverage,clang-tidy,clang-format,clang-diagnostic"
+        )
+        assert result == frozenset({
+            "yamllint", "pylint", "mypy", "coverage",
+            "clang-tidy", "clang-format", "clang-diagnostic",
+        })
+
+
+# --- Updated extension tests ---
+
+
+@pytest.mark.unit
+class TestGetRelevantExtensionsClang:
+    """Tests for get_relevant_extensions with clang tools."""
+
+    def test_clang_tidy_extensions(self) -> None:
+        """clang-tidy returns C/C++ extensions."""
+        result = get_relevant_extensions(frozenset({"clang-tidy"}))
+        assert result == frozenset({
+            ".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".hxx", ".m", ".mm",
+        })
+
+    def test_clang_format_extensions(self) -> None:
+        """clang-format returns C/C++ extensions."""
+        result = get_relevant_extensions(frozenset({"clang-format"}))
+        assert result == frozenset({
+            ".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".hxx", ".m", ".mm",
+        })
+
+    def test_clang_diagnostic_extensions(self) -> None:
+        """clang-diagnostic returns C/C++ extensions."""
+        result = get_relevant_extensions(frozenset({"clang-diagnostic"}))
+        assert result == frozenset({
+            ".c", ".cc", ".cpp", ".cxx", ".h", ".hpp", ".hxx", ".m", ".mm",
+        })
+
+    def test_combined_python_and_clang_tools(self) -> None:
+        """Combined Python and clang tools return all extensions."""
+        result = get_relevant_extensions(frozenset({"pylint", "clang-tidy"}))
+        assert ".py" in result
+        assert ".cpp" in result
+        assert ".toml" in result
+
+
+@pytest.mark.unit
+class TestGetToolsForExtensionClang:
+    """Tests for get_tools_for_extension with clang tools."""
+
+    def test_cpp_extension_returns_clang_tools(self) -> None:
+        """C++ file extension returns all clang tools."""
+        result = get_tools_for_extension(".cpp", ALL)
+        assert result == frozenset({
+            "clang-tidy", "clang-format", "clang-diagnostic",
+        })
+
+    def test_c_extension_returns_clang_tools(self) -> None:
+        """C file extension returns all clang tools."""
+        result = get_tools_for_extension(".c", ALL)
+        assert result == frozenset({
+            "clang-tidy", "clang-format", "clang-diagnostic",
+        })
+
+    def test_h_extension_returns_clang_tools(self) -> None:
+        """Header file extension returns all clang tools."""
+        result = get_tools_for_extension(".h", ALL)
+        assert result == frozenset({
+            "clang-tidy", "clang-format", "clang-diagnostic",
+        })
+
+    def test_py_extension_does_not_return_clang_tools(self) -> None:
+        """Python file extension does not return clang tools."""
+        result = get_tools_for_extension(".py", ALL)
+        assert "clang-tidy" not in result
+        assert "clang-format" not in result
+        assert "clang-diagnostic" not in result
+
+    def test_filters_clang_tools_by_requested(self) -> None:
+        """Only returns requested clang tools."""
+        result = get_tools_for_extension(
+            ".cpp", frozenset({"clang-tidy"})
+        )
+        assert result == frozenset({"clang-tidy"})

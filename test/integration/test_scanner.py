@@ -75,3 +75,82 @@ class TestScanLineIntegration:
         """scan_line only checks tools in the provided set."""
         result = scan_line("# type: ignore", frozenset({"pylint"}))
         assert not result
+
+
+@pytest.mark.integration
+class TestScanLineClangIntegration:
+    """Integration tests for scan_line with C-style comments."""
+
+    def test_scan_line_nolint(self) -> None:
+        """scan_line detects NOLINT in C++ comment."""
+        result = scan_line(
+            "int x = 1; // NOLINT",
+            frozenset({"clang-tidy"}),
+            c_style_comments=True,
+        )
+        assert result == [("clang-tidy", "NOLINT")]
+
+    def test_scan_line_nolintnextline(self) -> None:
+        """scan_line detects NOLINTNEXTLINE."""
+        result = scan_line(
+            "// NOLINTNEXTLINE",
+            frozenset({"clang-tidy"}),
+            c_style_comments=True,
+        )
+        assert result == [("clang-tidy", "NOLINTNEXTLINE")]
+
+    def test_scan_line_clang_format_off(self) -> None:
+        """scan_line detects clang-format off."""
+        result = scan_line(
+            "// clang-format off",
+            frozenset({"clang-format"}),
+            c_style_comments=True,
+        )
+        assert result == [("clang-format", "clang-format off")]
+
+    def test_scan_line_pragma_ignored(self) -> None:
+        """scan_line detects #pragma clang diagnostic ignored."""
+        result = scan_line(
+            '#pragma clang diagnostic ignored "-Wfoo"',
+            frozenset({"clang-diagnostic"}),
+            c_style_comments=True,
+        )
+        assert result == [
+            ("clang-diagnostic", "#pragma clang diagnostic ignored")
+        ]
+
+    def test_scan_line_nolint_in_string_not_detected(self) -> None:
+        """scan_line ignores NOLINT in C string literals."""
+        result = scan_line(
+            'const char* s = "NOLINT";',
+            frozenset({"clang-tidy"}),
+            c_style_comments=True,
+        )
+        assert not result
+
+    def test_scan_line_nolintend_not_detected(self) -> None:
+        """scan_line does not detect NOLINTEND."""
+        result = scan_line(
+            "// NOLINTEND",
+            frozenset({"clang-tidy"}),
+            c_style_comments=True,
+        )
+        assert not result
+
+    def test_scan_line_clang_format_on_not_detected(self) -> None:
+        """scan_line does not detect clang-format on."""
+        result = scan_line(
+            "// clang-format on",
+            frozenset({"clang-format"}),
+            c_style_comments=True,
+        )
+        assert not result
+
+    def test_scan_line_multiple_clang_tools(self) -> None:
+        """scan_line checks multiple clang tools."""
+        result = scan_line(
+            "int x = 1; // NOLINT",
+            frozenset({"clang-tidy", "clang-format"}),
+            c_style_comments=True,
+        )
+        assert result == [("clang-tidy", "NOLINT")]
