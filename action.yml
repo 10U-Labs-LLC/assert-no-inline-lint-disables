@@ -23,7 +23,9 @@ inputs:
     description: Suppress output, exit code only
     required: false
   tools:
-    description: Comma-separated list of tools (coverage,mypy,pylint,yamllint)
+    description: >-
+      Comma-separated list of tools
+      (clang-diagnostic,clang-format,clang-tidy,coverage,mypy,pylint,yamllint)
     required: true
   verbose:
     default: "false"
