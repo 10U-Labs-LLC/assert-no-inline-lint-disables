@@ -360,6 +360,11 @@ class TestScanFileCppIntegration:
         )
         assert len(findings) == 0
 
+
+@pytest.mark.integration
+class TestScanFileCppBlockAndMiscIntegration:
+    """Integration tests for scan_file block comments and misc C/C++."""
+
     def test_scan_file_cpp_unclosed_block_then_next_line(self) -> None:
         """scan_file handles block comment spanning two lines."""
         findings = scan_file(
